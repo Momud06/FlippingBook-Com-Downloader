@@ -1,0 +1,5 @@
+playwright
+img2pdf
+python-dotenv
+tqdm
+

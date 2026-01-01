@@ -1,0 +1,46 @@
+# Environment variables - NEVER commit credentials!
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+ENV/
+env/
+
+# Temporary files
+temp_screenshots/
+*.jpg
+*.png
+*.jpeg
+
+# Output PDFs
+*.pdf
+presentation.pdf
+wyklad_final.pdf
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Playwright
+.playwright/
+
