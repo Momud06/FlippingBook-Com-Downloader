@@ -1,6 +1,6 @@
-# Universal Presentation Scraper
+# FlippingBook Scraper
 
-A tool for automatically extracting slides/pages from web-based presentations and converting them to a single PDF file. Works with various presentation systems including FlippingBook, custom implementations, and more.
+A specialized tool for extracting slides/pages from **FlippingBook** presentations and converting them to a single PDF file. Optimized for FlippingBook, but can be configured to work with other web-based presentation systems.
 
 ## 📋 Requirements
 
@@ -45,7 +45,7 @@ PASSWORD=your_password
 LOGIN_URL=https://example.com/login
 USE_HTTP_AUTH=false
 
-# Optional - Presentation selectors (defaults work for FlippingBook)
+# Optional - Presentation selectors (defaults optimized for FlippingBook)
 PAGES_COUNT_SELECTOR=#pages-count
 PAGE_WRAPPER_SELECTOR=.page-wrapper
 PAGE_ATTRIBUTE=page
@@ -72,11 +72,20 @@ python scraper.py
 
 ## ⚙️ How it works?
 
-1. **Authentication** - Automatically logs into the website (if credentials provided)
-2. **Navigation** - Navigates to the specified presentation
-3. **Scraping** - Takes screenshots of each slide/page
-4. **Conversion** - Merges all screenshots into one PDF
-5. **Cleanup** - Optionally removes temporary files
+1. **Authentication** - Automatically logs into the website using HTTP Basic Auth (htaccess) or form-based login
+2. **Navigation** - Navigates to the specified FlippingBook presentation
+3. **Page Detection** - Automatically detects total number of pages in the presentation
+4. **Scraping** - Takes high-quality screenshots of each slide/page
+5. **Conversion** - Merges all screenshots into one PDF file
+6. **Cleanup** - Optionally removes temporary files
+
+## 🎯 Optimized for FlippingBook
+
+This scraper is specifically designed and tested with **FlippingBook** presentations. The default selectors and navigation methods are optimized for FlippingBook's structure:
+- Automatic page count detection from `#pages-count` selector
+- Page wrapper detection using `.page-wrapper` elements
+- Image detection with `img.img-fit` selector
+- Keyboard navigation using `ArrowRight` key
 
 ## 🔧 Configuration
 
@@ -94,13 +103,13 @@ All configuration is done via environment variables in `.env` file:
 - `USE_HTTP_AUTH` - Set to `true` to use HTTP Basic Authentication
 
 #### Presentation Selectors (Optional)
-These selectors define how the scraper finds pages in the presentation:
-- `PAGES_COUNT_SELECTOR` - CSS selector for element showing total page count (default: `#pages-count`)
-- `PAGE_WRAPPER_SELECTOR` - CSS selector for page container elements (default: `.page-wrapper`)
-- `PAGE_ATTRIBUTE` - HTML attribute name containing page number (default: `page`)
-- `PAGE_IMAGE_SELECTOR` - CSS selector for page image within wrapper (default: `img.img-fit`)
-- `NAVIGATION_KEY` - Keyboard key to navigate to next page (default: `ArrowRight`)
-- `FIRST_PAGE_KEY` - Keyboard key to navigate to first page (default: `Home`)
+These selectors define how the scraper finds pages in the presentation. **Defaults are optimized for FlippingBook:**
+- `PAGES_COUNT_SELECTOR` - CSS selector for element showing total page count (default: `#pages-count` - FlippingBook)
+- `PAGE_WRAPPER_SELECTOR` - CSS selector for page container elements (default: `.page-wrapper` - FlippingBook)
+- `PAGE_ATTRIBUTE` - HTML attribute name containing page number (default: `page` - FlippingBook)
+- `PAGE_IMAGE_SELECTOR` - CSS selector for page image within wrapper (default: `img.img-fit` - FlippingBook)
+- `NAVIGATION_KEY` - Keyboard key to navigate to next page (default: `ArrowRight` - FlippingBook)
+- `FIRST_PAGE_KEY` - Keyboard key to navigate to first page (default: `Home` - FlippingBook)
 
 #### Output Settings (Optional)
 - `OUTPUT_PDF` - Output PDF filename (default: `presentation.pdf`)
@@ -139,9 +148,9 @@ These selectors define how the scraper finds pages in the presentation:
 **Problem:** Navigation doesn't work
 - **Solution:** Check `NAVIGATION_KEY` in `.env` - try `ArrowDown`, `PageDown`, or other keys depending on your presentation system
 
-## 🔄 Making it work with different presentation systems
+## 🔄 Using with other presentation systems
 
-To adapt the scraper for a different presentation system:
+While optimized for FlippingBook, you can adapt the scraper for other presentation systems:
 
 1. **Inspect the presentation page** in your browser's developer tools
 2. **Identify the selectors:**

@@ -1,7 +1,7 @@
 """
-Universal presentation scraper for extracting slides/pages from web-based presentations.
-Supports various presentation systems (FlippingBook, custom implementations, etc.)
-and converts them to a single PDF file.
+FlippingBook scraper for extracting slides/pages from FlippingBook presentations.
+Optimized for FlippingBook, but configurable for other web-based presentation systems.
+Converts all pages to a single PDF file.
 """
 
 import os
@@ -518,7 +518,7 @@ def merge_to_pdf():
 def main():
     """Main function of the program."""
     print("=" * 60)
-    print("🚀 Universal Presentation Scraper")
+    print("🚀 FlippingBook Scraper")
     print("=" * 60)
     
     # Load config file if exists
