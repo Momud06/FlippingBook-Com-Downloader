@@ -363,116 +363,132 @@ def scrape_presentation(page):
     
     # Set of already captured screenshots (to avoid duplicates)
     captured_pages = set()
-    
+    skipped_pages = {}
+    capture_attempts = {}
+    max_capture_attempts_per_page = 2
+
+    def mark_skipped(page_num, reason, log=False):
+        if page_num is None:
+            return
+        reasons = skipped_pages.setdefault(page_num, set())
+        if reason not in reasons and log:
+            print(f"⚠️  Page {page_num}: {reason}")
+        reasons.add(reason)
+
+    def capture_visible_pages(visible_page_nums, progress_bar=None, retry_mode=False):
+        """Tries to capture currently visible pages and never raises for a single page failure."""
+        for visible_page_num in visible_page_nums:
+            if visible_page_num in captured_pages:
+                continue
+
+            if not (1 <= visible_page_num <= total_pages):
+                continue
+
+            attempts = capture_attempts.get(visible_page_num, 0)
+            if attempts >= max_capture_attempts_per_page:
+                mark_skipped(visible_page_num, f"osiągnięto limit prób ({max_capture_attempts_per_page})", log=True)
+                continue
+
+            capture_attempts[visible_page_num] = attempts + 1
+
+            try:
+                is_valid_page = page.evaluate(f"""
+                    () => {{
+                        const wrapper = document.querySelector('{PAGE_WRAPPER_SELECTOR}[{PAGE_ATTRIBUTE}="{visible_page_num}"]');
+                        if (!wrapper) return false;
+                        const computedStyle = window.getComputedStyle(wrapper);
+                        if (computedStyle.display === 'none') return false;
+                        const img = wrapper.querySelector('{PAGE_IMAGE_SELECTOR}');
+                        if (!img || !img.src) return false;
+                        if (!img.complete || img.naturalWidth === 0) return false;
+
+                        return true;
+                    }}
+                """)
+
+                if not is_valid_page:
+                    mark_skipped(visible_page_num, "obraz nie jest jeszcze gotowy do zapisu", log=True)
+                    continue
+
+                page_wrapper = page.query_selector(f'{PAGE_WRAPPER_SELECTOR}[{PAGE_ATTRIBUTE}="{visible_page_num}"]')
+                if not page_wrapper:
+                    mark_skipped(visible_page_num, "element strony nie został znaleziony", log=True)
+                    continue
+
+                computed_display = page.evaluate(f"""
+                    () => {{
+                        const wrapper = document.querySelector('{PAGE_WRAPPER_SELECTOR}[{PAGE_ATTRIBUTE}="{visible_page_num}"]');
+                        if (!wrapper) return false;
+                        return window.getComputedStyle(wrapper).display !== 'none';
+                    }}
+                """)
+
+                if not computed_display:
+                    mark_skipped(visible_page_num, "ukryta między sprawdzeniami", log=True)
+                    continue
+
+                screenshot_path = f"{TEMP_DIR}/temp_page_{visible_page_num:03d}.jpg"
+                page_wrapper.screenshot(path=screenshot_path, type="jpeg", quality=95)
+                captured_pages.add(visible_page_num)
+                if progress_bar is not None:
+                    progress_bar.update(1)
+                if retry_mode:
+                    print(f"✅ Retry captured page {visible_page_num}")
+
+            except Exception as capture_error:
+                mark_skipped(visible_page_num, f"błąd przechwytywania: {capture_error}", log=True)
+
+    def get_retryable_missing_pages():
+        return [
+            page_num
+            for page_num in range(1, total_pages + 1)
+            if page_num not in captured_pages
+            and capture_attempts.get(page_num, 0) < max_capture_attempts_per_page
+        ]
+
     # Scraping loop - use native presentation navigation
     # Iterate until we've captured screenshots of all pages
     iteration = 0
     max_iterations = total_pages * 2  # Safety against infinite loop
-    
+
     with tqdm(total=total_pages, desc="Scraping pages") as pbar:
         while len(captured_pages) < total_pages and iteration < max_iterations:
             iteration += 1
             try:
+                captured_before_iteration = len(captured_pages)
+
                 # Wait until page is loaded
                 wait_for_page_loaded(page)
                 # Brief wait for render
                 time.sleep(SCREENSHOT_DELAY)
-                
+
                 # Debug: check current URL
                 current_url = page.url
                 expected_from_url = get_expected_pages_from_url(page, total_pages)
-                
+
                 # Find all visible pages (may be 1 or 2)
                 visible_page_nums = get_visible_page_numbers(page, total_pages)
-                
+
                 # Debug: display information (only first 5 iterations)
                 if iteration <= 5:
                     print(f"\n🔍 Iteration {iteration}: URL={current_url}, expected={expected_from_url}, visible={visible_page_nums}")
-                
+
                 if visible_page_nums:
                     # Take screenshot of each visible page separately
-                    for visible_page_num in visible_page_nums:
-                        if visible_page_num not in captured_pages and 1 <= visible_page_num <= total_pages:
-                            # Check if this page is visible and has loaded image
-                            is_valid_page = page.evaluate(f"""
-                                () => {{
-                                    const wrapper = document.querySelector('{PAGE_WRAPPER_SELECTOR}[{PAGE_ATTRIBUTE}="{visible_page_num}"]');
-                                    if (!wrapper) return false;
-                                    const computedStyle = window.getComputedStyle(wrapper);
-                                    // Only if display !== 'none'
-                                    if (computedStyle.display === 'none') return false;
-                                    const img = wrapper.querySelector('{PAGE_IMAGE_SELECTOR}');
-                                    if (!img || !img.src) return false;
-                                    // Check if image is loaded
-                                    if (!img.complete || img.naturalWidth === 0) return false;
-                                    
-                                    // Check only obvious duplicates - if page is far (100+) 
-                                    // and has image of page 1, reject
-                                    const imgSrc = img.src.toLowerCase();
-                                    const expectedPageNum = {visible_page_num};
-                                    
-                                    // If this is a far page (100+), and image is clearly page 1, reject
-                                    if (expectedPageNum >= 100) {{
-                                        const isPage1Image = imgSrc.includes('page001') || 
-                                                             imgSrc.includes('page0001') || 
-                                                             (imgSrc.includes('page1') && 
-                                                              !imgSrc.includes('page10') && 
-                                                              !imgSrc.includes('page11') && 
-                                                              !imgSrc.includes('page12') && 
-                                                              !imgSrc.includes('page13') && 
-                                                              !imgSrc.includes('page14') &&
-                                                              !imgSrc.includes('page15') && 
-                                                              !imgSrc.includes('page16') && 
-                                                              !imgSrc.includes('page17') &&
-                                                              !imgSrc.includes('page18') && 
-                                                              !imgSrc.includes('page19'));
-                                        if (isPage1Image) {{
-                                            return false; // This is a duplicate of page 1
-                                        }}
-                                    }}
-                                    
-                                    return true;
-                                }}
-                            """)
-                            
-                            if is_valid_page:
-                                # Find page element
-                                page_wrapper = page.query_selector(f'{PAGE_WRAPPER_SELECTOR}[{PAGE_ATTRIBUTE}="{visible_page_num}"]')
-                                
-                                if page_wrapper:
-                                    # Check computed style one more time before screenshot
-                                    computed_display = page.evaluate(f"""
-                                        () => {{
-                                            const wrapper = document.querySelector('{PAGE_WRAPPER_SELECTOR}[{PAGE_ATTRIBUTE}="{visible_page_num}"]');
-                                            if (!wrapper) return false;
-                                            return window.getComputedStyle(wrapper).display !== 'none';
-                                        }}
-                                    """)
-                                    
-                                    if computed_display:
-                                        # Take screenshot of only this page
-                                        screenshot_path = f"{TEMP_DIR}/temp_page_{visible_page_num:03d}.jpg"
-                                        page_wrapper.screenshot(path=screenshot_path, type="jpeg", quality=95)
-                                        captured_pages.add(visible_page_num)
-                                        pbar.update(1)
-                                    else:
-                                        # Page was hidden between checks - skip
-                                        continue
-                                else:
-                                    print(f"\n⚠️  Page element {visible_page_num} not found, skipping...")
-                            else:
-                                # Page doesn't have proper image - skip (may be duplicate)
-                                continue
+                    capture_visible_pages(visible_page_nums, progress_bar=pbar)
                 else:
                     print(f"\n⚠️  No visible pages found in iteration {iteration}")
-                
+
+                if len(captured_pages) == captured_before_iteration and iteration >= 290:
+                    print(f"🕒 Iteration {iteration}: no new capture, continuing navigation... (captured {len(captured_pages)}/{total_pages})")
+
                 # Go to next page (only if we haven't done all)
                 if len(captured_pages) < total_pages:
                     page.keyboard.press(NAVIGATION_KEY)
                     time.sleep(0.5)  # Brief pause after navigation
                 else:
                     break  # All pages done
-                    
+
             except Exception as e:
                 print(f"\n⚠️  Error in iteration {iteration}: {e}")
                 # Try to continue despite error
@@ -480,12 +496,85 @@ def scrape_presentation(page):
                     try:
                         page.keyboard.press(NAVIGATION_KEY)
                         time.sleep(0.5)
-                    except:
+                    except Exception:
                         pass
                 continue
-    
-    if len(captured_pages) < total_pages:
+
+    missing_pages = [page_num for page_num in range(1, total_pages + 1) if page_num not in captured_pages]
+
+    if missing_pages:
         print(f"\n⚠️  Warning: Only captured {len(captured_pages)} of {total_pages} pages")
+        print(f"🧾 Missing pages after first pass: {', '.join(str(page_num) for page_num in missing_pages)}")
+
+        retryable_missing_pages = get_retryable_missing_pages()
+        if not retryable_missing_pages:
+            print("ℹ️  Brak stron do ponownej próby — wszystkie brakujące slajdy wyczerpały limit prób.")
+        else:
+            print("🔁 Retrying missing pages with one bounded sweep...")
+            page.keyboard.press(FIRST_PAGE_KEY)
+            time.sleep(0.8)
+
+            retry_round = 0
+            retry_round_limit = total_pages
+
+            with tqdm(total=len(retryable_missing_pages), desc="Retrying missing pages") as retry_pbar:
+                while retry_round < retry_round_limit and retryable_missing_pages:
+                    retry_round += 1
+                    try:
+                        if retry_round == 1 or retry_round % 10 == 0:
+                            print(
+                                f"🔁 Retry progress: round {retry_round}/{retry_round_limit}, "
+                                f"retryable={len(retryable_missing_pages)}, missing={len(missing_pages)}"
+                            )
+
+                        wait_for_page_loaded(page)
+                        time.sleep(SCREENSHOT_DELAY)
+
+                        retry_visible_pages = get_visible_page_numbers(page, total_pages)
+                        retry_targets = [page_num for page_num in retry_visible_pages if page_num in retryable_missing_pages]
+
+                        if retry_targets:
+                            print(f"🔁 Retry iteration {retry_round}: visible={retry_visible_pages}, targets={retry_targets}")
+                            before_retry = len(captured_pages)
+                            capture_visible_pages(retry_targets, progress_bar=retry_pbar, retry_mode=True)
+                            if len(captured_pages) > before_retry:
+                                missing_pages = [page_num for page_num in range(1, total_pages + 1) if page_num not in captured_pages]
+                                retryable_missing_pages = get_retryable_missing_pages()
+                        else:
+                            if retry_round <= 5:
+                                print(f"🔁 Retry iteration {retry_round}: visible={retry_visible_pages}, no retryable targets yet")
+
+                        if retry_round < retry_round_limit:
+                            page.keyboard.press(NAVIGATION_KEY)
+                            time.sleep(0.4)
+                    except Exception as retry_error:
+                        print(f"\n⚠️  Retry pass error: {retry_error}")
+                        try:
+                            page.keyboard.press(NAVIGATION_KEY)
+                            time.sleep(0.4)
+                        except Exception:
+                            pass
+
+            missing_pages = [page_num for page_num in range(1, total_pages + 1) if page_num not in captured_pages]
+
+        if missing_pages:
+            print(f"🧾 Still missing pages: {', '.join(str(page_num) for page_num in missing_pages)}")
+            for page_num in missing_pages:
+                reasons = sorted(skipped_pages.get(page_num, []))
+                if reasons:
+                    print(f"   - Page {page_num}: {', '.join(reasons)}")
+                else:
+                    print(f"   - Page {page_num}: not captured during navigation")
+            print("ℹ️  Continuing to PDF generation and output despite missing pages.")
+        else:
+            print("✅ All missing pages were recovered on retry.")
+
+    final_missing_pages = [page_num for page_num in range(1, total_pages + 1) if page_num not in captured_pages]
+    print(f"📌 Summary: captured {len(captured_pages)}/{total_pages} pages")
+    if final_missing_pages:
+        print(f"📌 Summary missing pages: {', '.join(str(page_num) for page_num in final_missing_pages)}")
+    else:
+        print("📌 Summary missing pages: none")
     
     print("\n✅ Finished scraping all pages!")
 
