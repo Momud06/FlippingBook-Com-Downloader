@@ -2,6 +2,10 @@
 FlippingBook scraper for extracting slides/pages from FlippingBook presentations.
 Optimized for FlippingBook, but configurable for other web-based presentation systems.
 Converts all pages to a single PDF file.
+
+Modes:
+- Screenshot mode: Fast, captures visual screenshots of each slide
+- Text extraction mode: Attempts to extract SVG layers and text for copyable PDF (experimental)
 """
 
 import os
@@ -10,11 +14,14 @@ import time
 import glob
 import re
 import json
+import base64
+import requests
 from pathlib import Path
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from img2pdf import convert
 from tqdm import tqdm
+from PIL import Image
 
 # Set UTF-8 encoding for Windows
 if sys.platform == 'win32':
@@ -327,8 +334,13 @@ def wait_for_page_loaded(page, expected_page_num=None):
         # If timeout, continue - page may already be loaded
         pass
 
-def scrape_presentation(page):
-    """Scrapes the presentation."""
+def scrape_presentation(page, extraction_mode="screenshot"):
+    """Scrapes the presentation.
+
+    Args:
+        page: Playwright page object
+        extraction_mode: "screenshot" (default) or "text" for SVG/text extraction
+    """
     # Check if we're already on the correct page
     current_url = page.url
     if START_URL and START_URL not in current_url:
@@ -386,12 +398,25 @@ def scrape_presentation(page):
 
             attempts = capture_attempts.get(visible_page_num, 0)
             if attempts >= max_capture_attempts_per_page:
-                mark_skipped(visible_page_num, f"osiągnięto limit prób ({max_capture_attempts_per_page})", log=True)
+                mark_skipped(visible_page_num, f"reached max attempts ({max_capture_attempts_per_page})", log=True)
                 continue
 
             capture_attempts[visible_page_num] = attempts + 1
 
             try:
+                # For text extraction mode, use asset download instead of screenshot
+                if extraction_mode == "text":
+                    if download_slide_with_text(page, visible_page_num):
+                        captured_pages.add(visible_page_num)
+                        if progress_bar is not None:
+                            progress_bar.update(1)
+                        if retry_mode:
+                            print(f"✅ Retry downloaded page {visible_page_num}")
+                    else:
+                        mark_skipped(visible_page_num, "failed to download assets", log=True)
+                    continue
+
+                # Screenshot mode (original behavior)
                 is_valid_page = page.evaluate(f"""
                     () => {{
                         const wrapper = document.querySelector('{PAGE_WRAPPER_SELECTOR}[{PAGE_ATTRIBUTE}="{visible_page_num}"]');
@@ -407,12 +432,12 @@ def scrape_presentation(page):
                 """)
 
                 if not is_valid_page:
-                    mark_skipped(visible_page_num, "obraz nie jest jeszcze gotowy do zapisu", log=True)
+                    mark_skipped(visible_page_num, "image not ready for capture", log=True)
                     continue
 
                 page_wrapper = page.query_selector(f'{PAGE_WRAPPER_SELECTOR}[{PAGE_ATTRIBUTE}="{visible_page_num}"]')
                 if not page_wrapper:
-                    mark_skipped(visible_page_num, "element strony nie został znaleziony", log=True)
+                    mark_skipped(visible_page_num, "page element not found", log=True)
                     continue
 
                 computed_display = page.evaluate(f"""
@@ -424,7 +449,7 @@ def scrape_presentation(page):
                 """)
 
                 if not computed_display:
-                    mark_skipped(visible_page_num, "ukryta między sprawdzeniami", log=True)
+                    mark_skipped(visible_page_num, "hidden between checks", log=True)
                     continue
 
                 screenshot_path = f"{TEMP_DIR}/temp_page_{visible_page_num:03d}.jpg"
@@ -436,7 +461,7 @@ def scrape_presentation(page):
                     print(f"✅ Retry captured page {visible_page_num}")
 
             except Exception as capture_error:
-                mark_skipped(visible_page_num, f"błąd przechwytywania: {capture_error}", log=True)
+                mark_skipped(visible_page_num, f"capture error: {capture_error}", log=True)
 
     def get_retryable_missing_pages():
         return [
@@ -508,7 +533,7 @@ def scrape_presentation(page):
 
         retryable_missing_pages = get_retryable_missing_pages()
         if not retryable_missing_pages:
-            print("ℹ️  Brak stron do ponownej próby — wszystkie brakujące slajdy wyczerpały limit prób.")
+            print("ℹ️  No pages to retry — all missing slides exhausted max attempts.")
         else:
             print("🔁 Retrying missing pages with one bounded sweep...")
             page.keyboard.press(FIRST_PAGE_KEY)
@@ -578,49 +603,178 @@ def scrape_presentation(page):
     
     print("\n✅ Finished scraping all pages!")
 
-def merge_to_pdf():
-    """Merges all screenshots into one PDF."""
-    print("📄 Merging screenshots into PDF...")
-    
-    # Find all temporary files and sort
-    image_files = sorted(glob.glob(f"{TEMP_DIR}/temp_page_*.jpg"))
-    
+def merge_to_pdf(extraction_mode="screenshot"):
+    """Merges all screenshots or images into one PDF."""
+    print("📄 Merging images into PDF...")
+
+    # Find appropriate files based on mode
+    if extraction_mode == "text":
+        image_files = sorted(glob.glob(f"{TEMP_DIR}/images/page_*.jpg"))
+    else:
+        image_files = sorted(glob.glob(f"{TEMP_DIR}/temp_page_*.jpg"))
+
     if not image_files:
-        print("❌ No screenshots found to merge!")
+        print("❌ No images found to merge!")
         return False
-    
+
     print(f"📦 Found {len(image_files)} files to merge.")
-    
+
     try:
         # Convert images to PDF
         with open(OUTPUT_PDF, "wb") as pdf_file:
             pdf_file.write(convert(image_files))
-        
+
         print(f"✅ PDF created successfully: {OUTPUT_PDF}")
         print(f"📊 File size: {os.path.getsize(OUTPUT_PDF) / (1024*1024):.2f} MB")
         return True
-        
+
     except Exception as e:
         print(f"❌ Error creating PDF: {e}")
         return False
+
+def download_asset(url, output_path, max_retries=3):
+    """Downloads asset (image or SVG) from URL with retry logic."""
+    for attempt in range(max_retries):
+        try:
+            # Handle data: URLs (base64 encoded)
+            if url.startswith('data:'):
+                match = re.search(r'data:[^;]+;base64,(.+)', url)
+                if match:
+                    data = base64.b64decode(match.group(1))
+                    with open(output_path, 'wb') as f:
+                        f.write(data)
+                    return True
+            else:
+                # Regular URL download with HTTP Basic Auth if needed
+                auth = None
+                if USE_HTTP_AUTH and USERNAME and PASSWORD:
+                    auth = (USERNAME, PASSWORD)
+
+                response = requests.get(url, auth=auth, timeout=30)
+                if response.status_code == 200:
+                    with open(output_path, 'wb') as f:
+                        f.write(response.content)
+                    return True
+        except requests.exceptions.Timeout:
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2
+                print(f"⏳ Timeout downloading {url}, retry {attempt + 1}/{max_retries} after {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"⚠️  Timeout downloading {url} after {max_retries} attempts")
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2
+                print(f"⏳ Error downloading {url}, retry {attempt + 1}/{max_retries} after {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"⚠️  Error downloading {url}: {e}")
+    return False
+
+def extract_slide_assets(page, page_number):
+    """Extracts SVG layer and background image URLs for a slide."""
+    try:
+        slide_data = page.evaluate(f"""
+            () => {{
+                const wrapper = document.querySelector('.page-wrapper[page="{page_number}"]');
+                if (!wrapper) return null;
+
+                // Get background image (PNG/JPG)
+                const bgImg = wrapper.querySelector('img.img-fit[data-src*="page-html5-substrates"]');
+                const bgUrl = bgImg ? (bgImg.getAttribute('data-src') || bgImg.src) : null;
+
+                // Get SVG layer
+                const svgImg = wrapper.querySelector('img.img-fit[data-src*="page-vectorlayers"]');
+                const svgUrl = svgImg ? (svgImg.getAttribute('data-src') || svgImg.src) : null;
+
+                // Get text content if available
+                const contentContainer = wrapper.querySelector('.content-container');
+                const textContent = contentContainer ? contentContainer.innerText : '';
+
+                return {{
+                    bgUrl: bgUrl,
+                    svgUrl: svgUrl,
+                    textContent: textContent
+                }};
+            }}
+        """)
+        return slide_data
+    except Exception as e:
+        print(f"⚠️  Error extracting slide {page_number}: {e}")
+        return None
+
+def download_slide_with_text(page, page_number):
+    """Downloads background image and SVG for text extraction mode."""
+    slide_data = extract_slide_assets(page, page_number)
+    if not slide_data:
+        return False
+
+    success = False
+
+    # Download background image (required)
+    if slide_data.get('bgUrl'):
+        bg_path = f"{TEMP_DIR}/images/page_{page_number:03d}.jpg"
+        if download_asset(slide_data['bgUrl'], bg_path):
+            success = True
+        else:
+            print(f"⚠️  Failed to download background for page {page_number}")
+            return False
+
+    # Download SVG layer (optional, for text extraction)
+    if slide_data.get('svgUrl'):
+        svg_path = f"{TEMP_DIR}/svg/page_{page_number:03d}.svg"
+        download_asset(slide_data['svgUrl'], svg_path)
+
+    # Save text content
+    if slide_data.get('textContent'):
+        text_path = f"{TEMP_DIR}/text/page_{page_number:03d}.txt"
+        with open(text_path, 'w', encoding='utf-8') as f:
+            f.write(slide_data['textContent'])
+
+    # Save metadata
+    metadata_path = f"{TEMP_DIR}/metadata/page_{page_number:03d}.json"
+    with open(metadata_path, 'w', encoding='utf-8') as f:
+        json.dump(slide_data, f, indent=2)
+
+    return success
 
 def main():
     """Main function of the program."""
     print("=" * 60)
     print("🚀 FlippingBook Scraper")
     print("=" * 60)
-    
+
     # Load config file if exists
     config = load_config_file()
-    
+
     # Check configuration
     if not START_URL:
         print("❌ Error: START_URL is required!")
         print("   Please set START_URL in .env file or environment variables")
         return
-    
+
+    # Ask user for extraction mode
+    print("\n📋 Choose extraction mode:")
+    print("1. Screenshot mode - Fast, captures slide screenshots (default)")
+    print("2. Text extraction mode - Attempts to extract SVG and text (experimental)")
+
+    mode_choice = input("\nChoose mode (1/2) [default 1]: ").strip()
+
+    if mode_choice == "2":
+        extraction_mode = "text"
+        print("✅ Selected: Text extraction mode")
+        print("⚠️  This mode is experimental and may not work with all presentations")
+    else:
+        extraction_mode = "screenshot"
+        print("✅ Selected: Screenshot mode")
+
     # Prepare temporary directory
     setup_temp_directory()
+
+    # Add folders for text extraction mode
+    if extraction_mode == "text":
+        for folder in ['images', 'svg', 'text', 'metadata']:
+            Path(f"{TEMP_DIR}/{folder}").mkdir(exist_ok=True)
     
     try:
         with sync_playwright() as p:
@@ -688,13 +842,13 @@ def main():
                         print("ℹ️  Continuing on current page...")
             
             # Scrape presentation
-            scrape_presentation(page)
+            scrape_presentation(page, extraction_mode)
             
             # Close browser
             browser.close()
             
             # Merge to PDF
-            if merge_to_pdf():
+            if merge_to_pdf(extraction_mode):
                 print("\n🎉 Success! PDF file has been created!")
                 
                 # Ask if temporary files should be removed (only if stdin is available)

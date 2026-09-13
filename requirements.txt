@@ -2,4 +2,8 @@ playwright
 img2pdf
 python-dotenv
 tqdm
+reportlab
+svglib
+pillow
+requests
 

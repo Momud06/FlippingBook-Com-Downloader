@@ -2,6 +2,15 @@
 
 A specialized tool for extracting slides/pages from **FlippingBook** presentations and converting them to a single PDF file. Optimized for FlippingBook, but can be configured to work with other web-based presentation systems.
 
+## 📦 Features
+
+The scraper now supports **two extraction modes**:
+
+1. **Screenshot mode** (default) - Fast, captures high-quality screenshots of slides
+2. **Text extraction mode** (experimental) - Extracts SVG layers and text content for potentially copyable text in PDF
+
+You can choose the mode when running the script via an interactive console prompt.
+
 ## 📋 Requirements
 
 - Python 3.7+
@@ -69,6 +78,20 @@ VIEWPORT_HEIGHT=1080
 ```bash
 python scraper.py
 ```
+
+When you run the script, you'll be prompted to choose between two extraction modes:
+
+1. **Screenshot mode** - Fast, takes high-quality screenshots of each slide
+2. **Text extraction mode** - Experimental feature that attempts to extract SVG layers and text content from FlippingBook presentations
+
+The script will then:
+- Open the presentation in a browser
+- Navigate through all pages
+- Extract content (screenshots or SVG layers + images based on your choice)
+- Generate a PDF file
+- Ask if you want to clean up temporary files
+
+**Note:** The text extraction mode is experimental and attempts to extract SVG text layers from FlippingBook presentations to create PDFs with potentially copyable text.
 
 ## ⚙️ How it works?
 
