@@ -37,7 +37,7 @@ A Playwright-based scraper for downloading the original page assets from a Flipp
 ​
 ```bash
 git clone https://github.com/Momud06/FlippingBook-Com-Downloader.git
-cd your-repository
+cd FlippingBook-Com-Downloader
 ```
 ​
 Replace the repository URL with the actual GitHub repository URL after publishing it.
