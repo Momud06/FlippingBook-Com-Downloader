@@ -113,7 +113,9 @@ flippingbook.pdf
 6. Each page background is composited with its matching overlays.
 7. Landscape spreads are split at the midpoint when appropriate.
 8. The resulting page images are saved into one PDF.
-   The script intentionally does not use FlippingBook's private CSS class names, and it does not use a screenshot of the entire browser window as a substitute for missing original assets.
+
+---
+The script intentionally does not use FlippingBook's private CSS class names, and it does not use a screenshot of the entire browser window as a substitute for missing original assets.
 ​
 ## Troubleshooting
 ​
