@@ -97,13 +97,6 @@ FlippingBook URL:
 Total number of individual pages:
 ```
 ​
-Example:
-​
-```text
-FlippingBook URL: https://online.flippingbook.com/view/429220229/
-Total number of individual pages: 187
-```
-​
 The browser opens visibly so you can observe the viewer while the script collects assets. When processing is complete, the PDF is written as:
 ​
 ```text
