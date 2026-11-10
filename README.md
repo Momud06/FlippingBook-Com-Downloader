@@ -135,7 +135,8 @@ playwright install-deps chromium
 ​
 ### The script stops with fewer pages than expected
 ​
-Check the page count entered at the prompt. It must be the number of individual pages, not the number of two-page spreads.
+Check the page count entered at the prompt.
+It must be the number of individual pages, not the number of two-page spreads.
 ​
 Also check the final diagnostic lines. The script requires original assets and will not generate a screenshot-based substitute PDF.
 ​
