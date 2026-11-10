@@ -40,8 +40,6 @@ git clone https://github.com/Momud06/FlippingBook-Com-Downloader.git
 cd FlippingBook-Com-Downloader
 ```
 ​
-Replace the repository URL with the actual GitHub repository URL after publishing it.
-​
 ### 2. Create and activate a virtual environment
 ​
 Windows PowerShell:
