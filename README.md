@@ -148,7 +148,6 @@ The viewer may be using a new asset format. Keep the collection log and inspect 
 - an SVG/vector asset, or
 - a transparent PNG overlay under a `/text/` path.
 
-​---
 Do not solve this by assigning a neighboring page's text layer. The overlay must be matched by its own page number or by a verified viewer mapping.
 ​
 ### The PDF contains duplicate or misplaced content
