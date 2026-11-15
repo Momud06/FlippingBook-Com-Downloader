@@ -163,11 +163,11 @@ That means an outdated script is being used. The current script downloads and co
 ```text
 flippingbook.py       Main scraper
 requirements.txt      Python dependencies
+LICENSE               License
 .gitignore            Files excluded from Git
 README.md             Project documentation
 ```
 ​
-## License and responsible use
-​
-Add a license appropriate for your project before publishing. This repository is a technical tool, not permission to download or redistribute any publication. You are responsible for obtaining authorization and complying with the source platform's terms and applicable law.
+## Respondependencies
+This repository is a technical tool, not permission to download or redistribute any publication. You are responsible for obtaining authorization and complying with the source platform's terms and applicable law.
 ​
