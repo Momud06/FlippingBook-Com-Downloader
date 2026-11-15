@@ -168,6 +168,6 @@ LICENSE               License
 README.md             Project documentation
 ```
 ​
-## Respondependencies
+## Responsible use
 This repository is a technical tool, not permission to download or redistribute any publication. You are responsible for obtaining authorization and complying with the source platform's terms and applicable law.
 ​
